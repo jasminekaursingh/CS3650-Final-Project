@@ -1,0 +1,471 @@
+--INSTRUCTION FETCH
+
+--Instruction Memory
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+--Instruction Memory will hold the processor's instructions in an array (IM) for processing throughout the pipeline
+entity Instruction_Memory is
+	port(
+		pc: in std_logic_vector(31 downto 0);
+		instruction: out std_logic_vector(31 downto 0)
+	);
+end Instruction_Memory;
+
+architecture Behavioral of Instruction_Memory is
+	type instructionMem is array (0 to 16) of std_logic_vector(31 downto 0);
+		constant IM: instructionMem:=(
+		      "00000000000000000000000000000000",
+		    --Immediate Arithmetic
+		      "00100000010000100000000000000011", --addi $2, $2, 3
+		      "00110000011001000000000000000110", --andi $4, $3, 6
+		      "00110100101000000000000000000001", --ori $0, $5, 1
+		      "00101001001001110000000000010001", --slti $7, $9, 17
+
+		    --Register Arithmetic
+		      "00000001000010010011100000100000", --add $7, $8, $9
+		      "00000000010001000010100000100010", --sub $5, $2, $4
+		      "00000000011000010100000000101010", --slt $8, $3, $1
+		      "00000001001001110010000000100100", --and $4, $9, $7
+		      "00000000010000010001100000100101", --or $3, $2, $1
+		      "00000001000001110100100000100110", --xor $9, $8, $7
+
+		    --Shift Instructions
+		      "00000000000000100001100100000000", --sll $3, $2, 4
+		      "00000000000001110010100010000010", --srl $5, $7, 2
+		      
+		    --Memory
+		      "10001101000000010000000000000010", --lw $1 2($8)
+		      "10101100000001000000000000000101",  --sw $4, 5($0)
+		
+		    --Jump and Branch
+		      "00001000000000000000000000001101", --j label           (label = index 13 of instruction memory)
+	              "00010001000000000000000000000010" --beq $t0, $0, label (label = index  2 of instruction memory)
+
+		);
+begin
+
+--instruction = the InstructionMem array at address of PC when pc is less than 41 (number of addresses in InstructionMem) or else Instruction
+	instruction <= IM(to_integer(unsigned(pc(5 downto 0)))) when pc < x"00000029" else x"00000000";
+end Behavioral;
+
+-------------------------------------------------------------------------------------------
+--INSTRUCTION DECODE
+
+--Control Unit
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+--Depending on the opcode, the 8 bit binary will output whether these signals should be high or low
+entity control_unit is
+	port(
+		opcode: in std_logic_vector(5 downto 0);
+		control_out: out std_logic_vector(7 downto 0)
+	);
+end control_unit;
+
+
+	-- RegDst, Branch, MemWrite, AluOp, AluSrc, MemToReg, MemRead, RegWrite
+	-- 1 RegDst
+	-- 2 Branch
+	-- 3 MemRead
+	-- 4 MemToReg (MTR)
+	-- 5 ALU op
+	-- 6 MemWrite
+	-- 7 ALU Src
+	-- 8 RegWrite
+
+Architecture Behavioural of control_unit is
+begin
+	process(opcode)
+	begin
+		case opcode is
+			when "000001" => control_out<= "10010101";
+			when "000100" => control_out<= "00010110";
+			when "001000" => control_out<= "11010100";
+			when "001100" => control_out<= "11010100";
+			when "100011" => control_out<= "11011100";
+			when "101011" => control_out<= "01111001";
+			when others => control_out <= "00000000";
+		end case;
+	end process;
+end Behavioural;
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+
+entity op_control is
+    port (
+        opcode: in std_logic_vector(5 downto 0);
+        OPout: out std_logic_vector(2 downto 0);
+        en: in std_logic
+    );
+end op_control;
+
+--op control will determine the output for all other instructions besides R-type (which will be determined ALU Control)
+
+Architecture Behavioural of op_control is
+begin
+    process(opcode)
+    begin
+        if (en='1') then
+            case opcode is
+                when "100011" => OPout<="010";
+                when "101011" => OPout<="010";
+                when "001000" => OPout<="010";
+                when "001100" => OPout<="110";
+                when "001001" => OPout<="011";
+                when "001110" => OPout<="001";
+                when others => OPout <= "000";
+            end case;
+        else
+            OPout <= "000";
+        end if;
+    end process;
+end Behavioural;
+
+
+-------------------------------------------------------------------------------------------
+
+--Pipeline Register Files + Register Files
+
+--Pipeline registers to hold values of registers throughout the pipeline
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.output_array_types.all;
+
+entity pipeline_register is
+	port(
+		clk: in STD_LOGIC;
+		mem_unit: in mem_array;
+		mem_unit_out: inout mem_array
+	);
+end pipeline_register;
+
+architecture behavioral of pipeline_register is
+begin
+	mem_unit_out<=mem_unit when rising_edge(clk) ;
+end behavioral;
+
+--Register File to intialize the memory of our 10 registers that are utilized throughout the instructions as well as read and write data to them
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+entity registerFile is
+	port (
+		reset_reg : in std_logic;
+		write_en: in std_logic; -- write control
+		write_addr: in std_logic_vector(4 downto 0); -- write address
+		write_data: in std_logic_vector(31 downto 0);
+		readAddr1: in std_logic_vector(4 downto 0);
+		readAddr2: in std_logic_vector(4 downto 0);
+		readData1: out std_logic_vector(31 downto 0);
+		readData2: out std_logic_vector(31 downto 0)
+	);
+end registerFile;
+
+architecture Behavioral of registerFile is
+	type reg_type is array (0 to 31 ) of std_logic_vector (31 downto 0);
+	signal registers: reg_type;
+begin
+	process(reset_reg,write_en,write_addr,write_data)
+	begin
+		if(reset_reg='1') then
+			registers<=(others => (others => '0'));
+ 			registers(0)<= x"00000000";
+			registers(1)<= x"00000001";
+			registers(2)<= x"00000002";
+			registers(3)<= x"00000003";
+			registers(4)<= x"00000004";
+			registers(5)<= x"00000005";
+			registers(6)<= x"00000006";
+			registers(7)<= x"00000007";
+			registers(8)<= x"00000008";
+			registers(9)<= x"00000009";
+		else
+ 			if(write_en='1') then
+ 				registers(to_integer(unsigned(write_addr(4 downto 0)))) <= write_data;
+ 			end if;
+		end if;
+	end process;
+readData1 <= x"00000000" when readAddr1(4 downto 0) = "00000" else registers(to_integer(unsigned(readAddr1(4 downto 0))));
+readData2 <= x"00000000" when readAddr2(4 downto 0) = "00000" else registers(to_integer(unsigned(readAddr2(4 downto 0))));
+end Behavioral;
+
+--------------------------------------------------------------------------------------------
+--ALU Control
+
+--ALU Control determines from the function code of R-type instructions what type of arith. operation is being done
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+entity ALU_Control is
+	port (
+		funct: in std_logic_vector(5 downto 0);
+		JMP : out std_logic;
+		en: in std_logic;
+		ALUcontrol_out: out std_logic_vector(2 downto 0)
+	);
+end ALU_Control;
+
+Architecture Behavioural of ALU_Control is
+begin
+	JMP <= not(funct(5));
+
+process(funct(4 downto 0))
+	begin
+		--depending on the 5 bit funct code, will determine a code to push to ALU
+		if (en='1') then
+			case funct(4 downto 0) is
+				when "00000" => ALUcontrol_out <="010";
+				when "00010" => ALUcontrol_out <="011";
+				when "00100" => ALUcontrol_out <="110";
+				when "01000" => ALUcontrol_out <="001";
+				when others => ALUcontrol_out <= "000";
+			end case;
+		else
+			ALUcontrol_out <= "000";
+		end if;
+end process;
+end Behavioural;
+
+------------------------------------------------------------------------------------------
+--Sign Extender
+
+--Retains the sign of a binary while extending the size of it
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.numeric_std.all;
+
+ENTITY sign16x32 IS
+	port(
+ 		signal s16: in std_logic_vector(15 downto 0);
+ 		signal s32: out std_logic_vector(31 downto 0)
+	);
+END sign16x32;
+
+architecture RTL of sign16x32 is
+begin
+	s32 <= std_logic_vector(resize(unsigned(s16), s32'length));
+end;
+
+-------------------------------------------------------------------------------------------
+
+--Zero Detector
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_signed.all;
+use IEEE.numeric_std.all;
+
+entity zero_detect is
+	Port(
+		A : in STD_LOGIC_VECTOR(31 downto 0);
+		B : in STD_LOGIC_VECTOR(31 downto 0);
+		outzero: out STD_LOGIC);
+end zero_detect;
+
+architecture behavioural of zero_detect is
+	signal temp: STD_LOGIC_VECTOR(31 downto 0);
+begin
+	OutZero <= '1' when temp = x"00000000" else '0';
+	process(A,B)
+	begin
+		if(A>B) then temp <= A - B;
+		else
+			temp <= B - A;
+		end if;
+	end process;
+end behavioural;
+
+-------------------------------------------------------------------------------------------
+
+--Shift Left
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
+entity Left_Shifter is
+	port (
+		A: in std_logic_vector(31 downto 0);
+		en: in std_logic;
+		shifted: out std_logic_vector(31 downto 0));
+end Left_Shifter;
+
+Architecture Behavioural of Left_shifter is
+begin
+--IMPORTANT this file has NOT been used as a shifter and
+--is used simply as a buffer because shifting causes 4*offset
+--which is necessary for a memory which is 8bit wide with each
+--instruction 32 bit long causing a jump of 4 to be required.In
+--our case instead of PC+4 ourimplementation does PC+1 as each
+--word is 32 bit in instruction memory. if each word was 8 bit
+--then PC+4 would be correct for a jump to next instruction
+--considering each instruction to be 32 bit.
+
+shifted<=A when en ='1' else x"00000000";
+--(29 downto 0)&"00" should be used for 8bit wide memory
+--not 32 bit wide
+end Behavioural;
+
+
+--END OF INSTRUCTION DECODE PHASE
+
+--EXECUTION STAGE
+-------------------------------------------------------------------------------------------
+
+--ALU
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_signed.all;
+
+entity ALU_CLK is
+	port(
+ 		InRegA,InRegB : in std_logic_vector(31 downto 0); --input operands
+ 		InOp : in std_logic_vector(2 downto 0); --Operation to be performed
+ 		OutReg : out std_logic_vector(31 downto 0) --output of ALU
+ 	);
+end ALU_CLK;
+
+architecture Behavioral of ALU_CLK is
+--signal Reg1,Reg2,Reg3 : std_logic_vector(31 downto 0) := (others => '0');
+-- signal temp: std_logic_vector(31 downto 0);
+begin
+--Reg1 <= InRegA;
+--Reg2 <= InRegB;
+--OutReg <= Reg3;
+process(InRegA,InRegB,InOp)
+
+begin
+	case InOp is
+		when "110" => OutReg <= InRegA and InRegB; --AND gate
+ 		when "001" => OutReg <= InRegA xor InRegB; --XOR gate
+ 		when "010" => OutReg <= InRegA + InRegB; --addition
+ 		when "011" => OutReg <= InRegA - InRegB; --Subtraction
+ 		when others => NULL;
+ 	end case;
+end process;
+
+end Behavioral;
+
+
+--MEMORY ACCESS PHASE
+-------------------------------------------------------------------------------------------
+
+--Data Memory
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+entity data_memory is
+
+port(
+	mem_rst: in STD_LOGIC;
+	mem_write: in STD_LOGIC;
+	mem_read: in STD_LOGIC;
+	mem_enable: in STD_LOGIC;
+	address: in STD_LOGIC_VECTOR(31 downto 0);
+	write_data: in STD_LOGIC_VECTOR(31 downto 0);
+	read_data: out STD_LOGIC_VECTOR(31 downto 0)
+);
+
+end data_memory;
+
+architecture behavioral of data_memory is
+	type mem_array is array(0 to (2**8)-1) of STD_LOGIC_VECTOR(31 downto 0);
+	signal mem_unit: mem_array := (others => (others => '0'));
+begin
+	process(mem_rst,mem_enable,mem_write,address,write_data)
+	begin
+		if(mem_rst = '1') then
+		mem_unit<= (others => (others => '0'));
+		elsif(mem_enable = '1') then
+			if(mem_write = '1') then
+				mem_unit(to_integer(unsigned(address(7 downto 0))))<=write_data;
+			end if;
+		end if;
+end process;
+
+read_data<=mem_unit(to_integer(unsigned(address(7 downto 0)))) when(mem_read ='1') else (others => '0');
+end behavioral;
+
+--WRITE BACK PHASE
+--------------------------------------------------------------------------------------------
+
+--MUX (All Different MUX for the entire pipeline are located here; are called at different points)
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mux_2by1_32_bit is
+	port(
+		data_in_lsb: in STD_LOGIC_VECTOR(31 downto 0);
+		data_in_msb: in STD_LOGIC_VECTOR(31 downto 0);
+		sel: in STD_LOGIC;
+		data_out: out STD_LOGIC_VECTOR(31 downto 0)
+	);
+end mux_2by1_32_bit;
+
+architecture behavioral of mux_2by1_32_bit is
+begin
+	data_out <= data_in_msb when (sel = '1') else data_in_lsb;
+end behavioral;
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mux_2by1_3_bit is
+	port(
+		data_in_lsb: in STD_LOGIC_VECTOR(2 downto 0);
+		data_in_msb: in STD_LOGIC_VECTOR(2 downto 0);
+		sel: in STD_LOGIC;
+		data_out: out STD_LOGIC_VECTOR(2 downto 0)
+	);
+end mux_2by1_3_bit;
+
+architecture behavioral of mux_2by1_3_bit is
+begin
+	data_out <= data_in_msb when (sel = '1') else data_in_lsb;
+end behavioral;
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mux_2by1_5_bit is
+	port(
+		data_in_lsb: in STD_LOGIC_VECTOR(4 downto 0);
+		data_in_msb: in STD_LOGIC_VECTOR(4 downto 0);
+		sel: in STD_LOGIC;
+		data_out: out STD_LOGIC_VECTOR(4 downto 0)
+	);
+end mux_2by1_5_bit;
+
+architecture behavioral of mux_2by1_5_bit is
+begin
+	data_out <= data_in_msb when (sel = '1') else data_in_lsb;
+end behavioral;
+
+-------------------------------------------------------------------------------------------
+
+--Output Array Types
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+package output_array_types is
+	type mem_array is array(0 to (2**5)-1) of STD_LOGIC_VECTOR(31 downto 0);
+end package output_array_types;
