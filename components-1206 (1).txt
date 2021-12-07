@@ -47,7 +47,7 @@ architecture Behavioral of Instruction_Memory is
 		);
 begin
 
---instruction = the InstructionMem array at address of PC when pc is less than 41 (number of addresses in InstructionMem) or else Instruction
+--instruction = the InstructionMem array at address of PC when pc is less than 41 (number of addresses in InstructionMem) or else instruction = 0
 	instruction <= IM(to_integer(unsigned(pc(5 downto 0)))) when pc < x"00000029" else x"00000000";
 end Behavioral;
 
@@ -68,7 +68,7 @@ entity control_unit is
 	);
 end control_unit;
 
-
+	--Index of Control Units in 8 bit string
 	-- RegDst, Branch, MemWrite, AluOp, AluSrc, MemToReg, MemRead, RegWrite
 	-- 1 RegDst
 	-- 2 Branch
@@ -241,7 +241,7 @@ end Behavioural;
 ------------------------------------------------------------------------------------------
 --Sign Extender
 
---Retains the sign of a binary while extending the size of it
+--Utilized for I-type instructions to extend the immediate 16 bits to 32
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 USE IEEE.numeric_std.all;
@@ -258,9 +258,11 @@ begin
 	s32 <= std_logic_vector(resize(unsigned(s16), s32'length));
 end;
 
--------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------
 
 --Zero Detector
+
+--Used to verify is the destination register for branch is 0 to continue branching instruction
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
@@ -289,7 +291,7 @@ end behavioural;
 
 -------------------------------------------------------------------------------------------
 
---Shift Left
+--Shift Left acting as a buffer for I-type instructions
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
@@ -302,21 +304,9 @@ entity Left_Shifter is
 end Left_Shifter;
 
 Architecture Behavioural of Left_shifter is
-begin
---IMPORTANT this file has NOT been used as a shifter and
---is used simply as a buffer because shifting causes 4*offset
---which is necessary for a memory which is 8bit wide with each
---instruction 32 bit long causing a jump of 4 to be required.In
---our case instead of PC+4 ourimplementation does PC+1 as each
---word is 32 bit in instruction memory. if each word was 8 bit
---then PC+4 would be correct for a jump to next instruction
---considering each instruction to be 32 bit.
-
-shifted<=A when en ='1' else x"00000000";
---(29 downto 0)&"00" should be used for 8bit wide memory
---not 32 bit wide
+begin	
+	shifted<=A when en ='1' else x"00000000";
 end Behavioural;
-
 
 --END OF INSTRUCTION DECODE PHASE
 
@@ -338,29 +328,23 @@ entity ALU_CLK is
 end ALU_CLK;
 
 architecture Behavioral of ALU_CLK is
---signal Reg1,Reg2,Reg3 : std_logic_vector(31 downto 0) := (others => '0');
--- signal temp: std_logic_vector(31 downto 0);
 begin
---Reg1 <= InRegA;
---Reg2 <= InRegB;
---OutReg <= Reg3;
-process(InRegA,InRegB,InOp)
-
-begin
-	case InOp is
-		when "110" => OutReg <= InRegA and InRegB; --AND gate
- 		when "001" => OutReg <= InRegA xor InRegB; --XOR gate
- 		when "010" => OutReg <= InRegA + InRegB; --addition
- 		when "011" => OutReg <= InRegA - InRegB; --Subtraction
- 		when others => NULL;
- 	end case;
-end process;
+	process(InRegA,InRegB,InOp)
+	begin
+		case InOp is
+			when "110" => OutReg <= InRegA and InRegB; --AND
+ 			when "001" => OutReg <= InRegA xor InRegB; --XOR
+ 			when "010" => OutReg <= InRegA + InRegB; --Addition
+ 			when "011" => OutReg <= InRegA - InRegB; --Subtraction
+ 			when others => NULL;
+ 		end case;
+	end process;
 
 end Behavioral;
 
 
---MEMORY ACCESS PHASE
 -------------------------------------------------------------------------------------------
+--MEMORY ACCESS
 
 --Data Memory
 
@@ -422,6 +406,7 @@ begin
 	data_out <= data_in_msb when (sel = '1') else data_in_lsb;
 end behavioral;
 
+--------------------
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -440,6 +425,8 @@ architecture behavioral of mux_2by1_3_bit is
 begin
 	data_out <= data_in_msb when (sel = '1') else data_in_lsb;
 end behavioral;
+
+--------------------
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -461,7 +448,7 @@ end behavioral;
 
 -------------------------------------------------------------------------------------------
 
---Output Array Types
+--Package for output of array types
 
 library ieee;
 use ieee.std_logic_1164.all;
